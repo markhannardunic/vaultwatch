@@ -1,68 +1,51 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"os"
-	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/vaultwatch/internal/filter"
 )
 
-// Config holds the top-level vaultwatch configuration.
+// Thresholds holds warning/critical day thresholds.
+type Thresholds struct {
+	Warning  int `yaml:"warning"`
+	Critical int `yaml:"critical"`
+}
+
+// Config holds the full application configuration.
 type Config struct {
-	Vault  VaultConfig  `yaml:"vault"`
-	Alert  AlertConfig  `yaml:"alert"`
+	VaultAddress string     `yaml:"vault_address"`
+	Token        string     `yaml:"token"`
+	Secrets      []string   `yaml:"secrets"`
+	Thresholds   Thresholds `yaml:"thresholds"`
+	Output       string     `yaml:"output"`
+	Filter       filter.Rule `yaml:"filter"`
 }
 
-// VaultConfig holds Vault connection settings.
-type VaultConfig struct {
-	Address string `yaml:"address"`
-	Token   string `yaml:"token"`
-	Paths   []string `yaml:"paths"`
-}
-
-// AlertConfig holds alerting thresholds and output settings.
-type AlertConfig struct {
-	WarnWithin    time.Duration `yaml:"warn_within"`
-	CriticalWithin time.Duration `yaml:"critical_within"`
-	Output        string        `yaml:"output"` // stdout | file
-	OutputFile    string        `yaml:"output_file"`
-}
-
-// Load reads and parses a YAML config file from the given path.
+// Load reads and parses a YAML config file.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading config file: %w", err)
+		return nil, err
 	}
-
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config file: %w", err)
+		return nil, err
 	}
-
-	if err := cfg.validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+	if cfg.VaultAddress == "" {
+		return nil, errors.New("vault_address is required")
 	}
-
+	if cfg.Thresholds.Warning == 0 {
+		cfg.Thresholds.Warning = 14
+	}
+	if cfg.Thresholds.Critical == 0 {
+		cfg.Thresholds.Critical = 7
+	}
+	if cfg.Output == "" {
+		cfg.Output = "text"
+	}
 	return &cfg, nil
-}
-
-func (c *Config) validate() error {
-	if c.Vault.Address == "" {
-		return fmt.Errorf("vault.address is required")
-	}
-	if c.Vault.Token == "" {
-		return fmt.Errorf("vault.token is required")
-	}
-	if len(c.Vault.Paths) == 0 {
-		return fmt.Errorf("vault.paths must contain at least one path")
-	}
-	if c.Alert.WarnWithin == 0 {
-		c.Alert.WarnWithin = 7 * 24 * time.Hour
-	}
-	if c.Alert.CriticalWithin == 0 {
-		c.Alert.CriticalWithin = 24 * time.Hour
-	}
-	return nil
 }
