@@ -5,52 +5,57 @@ import (
 	"time"
 )
 
-// ExpiryAlert represents a secret that is expiring soon.
-type ExpiryAlert struct {
+// SecretStatus represents the expiry status of a secret.
+type SecretStatus struct {
 	Path      string
 	ExpiresAt time.Time
-	TTL       time.Duration
+	DaysLeft  int
+	Critical  bool
+	Warning   bool
 }
 
-// Checker audits a list of secret paths and returns alerts for secrets
-// expiring within the given threshold duration.
+// Checker evaluates secrets against configured thresholds.
 type Checker struct {
-	client    *Client
-	threshold time.Duration
+	client           *Client
+	WarnThresholdDays int
+	CritThresholdDays int
 }
 
-// NewChecker creates a Checker with the given Vault client and alert threshold.
-func NewChecker(client *Client, threshold time.Duration) *Checker {
-	return &Checker{client: client, threshold: threshold}
+// NewChecker creates a Checker with the given client and thresholds.
+func NewChecker(client *Client, warnDays, critDays int) *Checker {
+	return &Checker{
+		client:           client,
+		WarnThresholdDays: warnDays,
+		CritThresholdDays: critDays,
+	}
 }
 
-// Audit checks each path and returns alerts for secrets expiring within the threshold.
-func (ch *Checker) Audit(paths []string) ([]ExpiryAlert, error) {
-	var alerts []ExpiryAlert
-
-	for _, path := range paths {
-		meta, err := ch.client.GetSecretMeta(path)
-		if err != nil {
-			return nil, fmt.Errorf("audit failed for path %s: %w", path, err)
-		}
-
-		if meta.TTL <= ch.threshold {
-			alerts = append(alerts, ExpiryAlert{
-				Path:      meta.Path,
-				ExpiresAt: meta.ExpiresAt,
-				TTL:       meta.TTL,
-			})
-		}
+// Check retrieves metadata for the secret at path and evaluates its expiry.
+func (c *Checker) Check(path string) (*SecretStatus, error) {
+	meta, err := c.client.GetSecretMeta(path)
+	if err != nil {
+		return nil, fmt.Errorf("checker: %w", err)
 	}
 
-	return alerts, nil
+	daysLeft := int(time.Until(meta.ExpiresAt).Hours() / 24)
+	status := &SecretStatus{
+		Path:      path,
+		ExpiresAt: meta.ExpiresAt,
+		DaysLeft:  daysLeft,
+		Critical:  daysLeft <= c.CritThresholdDays,
+		Warning:   daysLeft <= c.WarnThresholdDays && daysLeft > c.CritThresholdDays,
+	}
+	return status, nil
 }
 
-// FormatAlert returns a human-readable string for an ExpiryAlert.
-func FormatAlert(a ExpiryAlert) string {
-	return fmt.Sprintf("[EXPIRING] %s — TTL: %s, Expires At: %s",
-		a.Path,
-		a.TTL.Round(time.Second),
-		a.ExpiresAt.Format(time.RFC3339),
-	)
+// FormatAlert returns a human-readable alert string for the given status.
+func FormatAlert(s *SecretStatus) string {
+	level := "INFO"
+	if s.Critical {
+		level = "CRITICAL"
+	} else if s.Warning {
+		level = "WARNING"
+	}
+	return fmt.Sprintf("[%s] secret %q expires in %d day(s) (at %s)",
+		level, s.Path, s.DaysLeft, s.ExpiresAt.Format(time.RFC3339))
 }
