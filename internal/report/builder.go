@@ -1,43 +1,33 @@
 package report
 
-import (
-	"context"
-	"fmt"
+import "time"
 
-	"github.com/your-org/vaultwatch/internal/vault"
-)
-
-// Builder constructs a Report by checking a list of secret paths.
+// Builder accumulates report entries from checker results.
 type Builder struct {
-	checker *vault.Checker
-	report  *Report
+	report *Report
 }
 
-// NewBuilder creates a Builder using the given checker and report.
-func NewBuilder(checker *vault.Checker, r *Report) *Builder {
-	return &Builder{checker: checker, report: r}
+// NewBuilder creates a new Builder.
+func NewBuilder() *Builder {
+	return &Builder{report: New()}
 }
 
-// Build iterates over paths, checks each secret, and adds entries to the report.
-func (b *Builder) Build(ctx context.Context, paths []string) error {
-	for _, path := range paths {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+// Add appends an entry to the report.
+func (b *Builder) Add(path, level string, expiry time.Time, daysLeft int) {
+	b.report.entries = append(b.report.entries, Entry{
+		Path:     path,
+		Level:    level,
+		Expiry:   expiry,
+		DaysLeft: daysLeft,
+	})
+}
 
-		result, err := b.checker.Check(ctx, path)
-		if err != nil {
-			return fmt.Errorf("build report: check %q: %w", path, err)
-		}
+// Build returns the completed Report.
+func (b *Builder) Build() *Report {
+	return b.report
+}
 
-		b.report.Add(Entry{
-			Path:      path,
-			Level:     result.Level,
-			ExpiresAt: result.ExpiresAt,
-			Message:   vault.FormatAlert(result),
-		})
-	}
-	return nil
+// Len returns the number of entries added so far.
+func (b *Builder) Len() int {
+	return len(b.report.entries)
 }

@@ -1,33 +1,29 @@
-package report_test
+package report
 
 import (
 	"bytes"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/your-org/vaultwatch/internal/report"
 )
 
-func makeEntry(path, level string, hoursUntil float64) report.Entry {
-	return report.Entry{
-		Path:      path,
-		Level:     level,
-		ExpiresAt: time.Now().Add(time.Duration(hoursUntil * float64(time.Hour))),
-		Message:   level + " alert for " + path,
+func makeEntry(path, level string, days int) Entry {
+	return Entry{
+		Path:     path,
+		Level:    level,
+		Expiry:   time.Now().AddDate(0, 0, days),
+		DaysLeft: days,
 	}
 }
 
 func TestReport_Render_ContainsEntries(t *testing.T) {
-	var buf bytes.Buffer
-	r := report.New(&buf)
-	r.Add(makeEntry("secret/db", "critical", 2))
-	r.Add(makeEntry("secret/api", "warning", 48))
-
-	if err := r.Render(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := New()
+	r.entries = []Entry{
+		makeEntry("secret/db", "critical", 3),
+		makeEntry("secret/api", "warning", 20),
 	}
-
+	var buf bytes.Buffer
+	r.Render(&buf)
 	out := buf.String()
 	if !strings.Contains(out, "secret/db") {
 		t.Error("expected secret/db in output")
@@ -38,12 +34,13 @@ func TestReport_Render_ContainsEntries(t *testing.T) {
 }
 
 func TestReport_Summary_Counts(t *testing.T) {
-	r := report.New(nil)
-	r.Add(makeEntry("a", "critical", 1))
-	r.Add(makeEntry("b", "critical", 2))
-	r.Add(makeEntry("c", "warning", 50))
-	r.Add(makeEntry("d", "healthy", 200))
-
+	r := New()
+	r.entries = []Entry{
+		makeEntry("a", "critical", 2),
+		makeEntry("b", "critical", 4),
+		makeEntry("c", "warning", 15),
+		makeEntry("d", "healthy", 60),
+	}
 	s := r.Summary()
 	if s["critical"] != 2 {
 		t.Errorf("expected 2 critical, got %d", s["critical"])
@@ -57,21 +54,20 @@ func TestReport_Summary_Counts(t *testing.T) {
 }
 
 func TestReport_Render_SummaryLine(t *testing.T) {
+	r := New()
+	r.entries = []Entry{makeEntry("secret/x", "warning", 10)}
 	var buf bytes.Buffer
-	r := report.New(&buf)
-	r.Add(makeEntry("x", "critical", 3))
-
-	_ = r.Render()
-
+	r.Render(&buf)
 	if !strings.Contains(buf.String(), "Summary:") {
 		t.Error("expected Summary line in output")
 	}
 }
 
 func TestReport_Empty_Render(t *testing.T) {
+	r := New()
 	var buf bytes.Buffer
-	r := report.New(&buf)
-	if err := r.Render(); err != nil {
-		t.Fatalf("unexpected error on empty report: %v", err)
+	r.Render(&buf)
+	if !strings.Contains(buf.String(), "No secrets audited") {
+		t.Error("expected empty message")
 	}
 }

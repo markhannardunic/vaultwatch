@@ -8,60 +8,59 @@ import (
 	"time"
 )
 
-// Entry represents a single secret audit result.
+// Entry holds audit data for a single secret.
 type Entry struct {
-	Path      string
-	Level     string
-	ExpiresAt time.Time
-	Message   string
+	Path     string
+	Level    string
+	Expiry   time.Time
+	DaysLeft int
 }
 
-// Report holds a collection of audit entries.
+// Report holds a collection of secret audit entries.
 type Report struct {
 	entries []Entry
-	writer  io.Writer
 }
 
-// New creates a new Report writing to w. If w is nil, os.Stdout is used.
-func New(w io.Writer) *Report {
-	if w == nil {
-		w = os.Stdout
+// New creates an empty Report.
+func New() *Report {
+	return &Report{}
+}
+
+// Render writes a formatted table of entries to w.
+func (r *Report) Render(w io.Writer) {
+	if len(r.entries) == 0 {
+		fmt.Fprintln(w, "No secrets audited.")
+		return
 	}
-	return &Report{writer: w}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "PATH\tLEVEL\tEXPIRY\tDAYS LEFT")
+	for _, e := range r.entries {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\n",
+			e.Path, e.Level, e.Expiry.Format("2006-01-02"), e.DaysLeft)
+	}
+	tw.Flush()
+	r.renderSummary(w)
 }
 
-// Add appends an entry to the report.
-func (r *Report) Add(e Entry) {
-	r.entries = append(r.entries, e)
+// renderSummary prints counts by level.
+func (r *Report) renderSummary(w io.Writer) {
+	counts := r.Summary()
+	fmt.Fprintf(w, "\nSummary: %d critical, %d warning, %d healthy\n",
+		counts["critical"], counts["warning"], counts["healthy"])
 }
 
-// Summary returns counts by level.
+// Summary returns a map of level -> count.
 func (r *Report) Summary() map[string]int {
-	counts := map[string]int{}
+	m := map[string]int{"critical": 0, "warning": 0, "healthy": 0}
 	for _, e := range r.entries {
-		counts[e.Level]++
+		if _, ok := m[e.Level]; ok {
+			m[e.Level]++
+		}
 	}
-	return counts
+	return m
 }
 
-// Render writes a formatted table of entries to the report's writer.
-func (r *Report) Render() error {
-	tw := tabwriter.NewWriter(r.writer, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "PATH\tLEVEL\tEXPIRES\tMESSAGE")
-	fmt.Fprintln(tw, "----\t-----\t-------\t-------")
-	for _, e := range r.entries {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			e.Path,
-			e.Level,
-			e.ExpiresAt.Format(time.RFC3339),
-			e.Message,
-		)
-	}
-	if err := tw.Flush(); err != nil {
-		return fmt.Errorf("report render: %w", err)
-	}
-	s := r.Summary()
-	fmt.Fprintf(r.writer, "\nSummary: critical=%d warning=%d healthy=%d\n",
-		s["critical"], s["warning"], s["healthy"])
-	return nil
+// Print renders the report to stdout.
+func (r *Report) Print() {
+	r.Render(os.Stdout)
 }
