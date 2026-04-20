@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// Sender is the interface satisfied by all notification back-ends.
+// Sender is the interface for notification backends.
 type Sender interface {
-	Send(level, message, path string) error
+	Send(level, message string) error
 }
 
 // Router dispatches alerts to one or more Senders based on alert level.
@@ -16,7 +16,7 @@ type Router struct {
 	routes map[string][]Sender
 }
 
-// NewRouter returns an empty Router.
+// NewRouter creates an empty Router.
 func NewRouter() *Router {
 	return &Router{routes: make(map[string][]Sender)}
 }
@@ -27,38 +27,41 @@ func (r *Router) Register(level string, s Sender) {
 	r.routes[level] = append(r.routes[level], s)
 }
 
-// Dispatch sends the alert to every Sender registered for the level or "*".
-// All errors are collected and returned as a single combined error.
-func (r *Router) Dispatch(level, message, path string) error {
+// Dispatch sends the message to all Senders registered for the level
+// and to any wildcard ("*") Senders. Errors from all senders are collected.
+func (r *Router) Dispatch(level, message string) error {
 	level = strings.ToLower(level)
-	var senders []Sender
-	if ss, ok := r.routes[level]; ok {
-		senders = append(senders, ss...)
-	}
-	if wildcards, ok := r.routes["*"]; ok {
-		senders = append(senders, wildcards...)
-	}
 	var errs []string
-	for _, s := range senders {
-		if err := s.Send(level, message, path); err != nil {
+	for _, s := range r.routes[level] {
+		if err := s.Send(level, message); err != nil {
 			errs = append(errs, err.Error())
 		}
 	}
+	if level != "*" {
+		for _, s := range r.routes["*"] {
+			if err := s.Send(level, message); err != nil {
+				errs = append(errs, err.Error())
+			}
+		}
+	}
 	if len(errs) > 0 {
-		return fmt.Errorf("router dispatch errors: %s", strings.Join(errs, "; "))
+		return fmt.Errorf("router: %d sender(s) failed: %s", len(errs), strings.Join(errs, "; "))
 	}
 	return nil
 }
 
-// writerSender is a simple Sender that writes formatted alerts to an io.Writer.
-type writerSender struct{ w io.Writer }
-
-// NewWriterSender returns a Sender that writes alerts as text to w.
-func NewWriterSender(w io.Writer) Sender {
-	return &writerSender{w: w}
+// WriterSender is a Sender that writes formatted alerts to an io.Writer.
+type WriterSender struct {
+	w io.Writer
 }
 
-func (ws *writerSender) Send(level, message, path string) error {
-	_, err := fmt.Fprintf(ws.w, "[%s] %s (%s)\n", strings.ToUpper(level), message, path)
+// NewWriterSender returns a Sender that writes to w.
+func NewWriterSender(w io.Writer) *WriterSender {
+	return &WriterSender{w: w}
+}
+
+// Send writes "[level] message" to the underlying writer.
+func (ws *WriterSender) Send(level, message string) error {
+	_, err := fmt.Fprintf(ws.w, "[%s] %s\n", strings.ToUpper(level), message)
 	return err
 }
