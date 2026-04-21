@@ -19,6 +19,17 @@ func HealthCheckDefaults() HealthCheckConfig {
 	}
 }
 
+// Validate checks that the HealthCheckConfig values are within acceptable
+// bounds. It returns an error if any field fails validation.
+func (hc HealthCheckConfig) Validate() error {
+	if hc.Interval < 5*time.Second {
+		return fmt.Errorf(
+			"healthcheck: interval %v is below minimum of 5s", hc.Interval,
+		)
+	}
+	return nil
+}
+
 // HealthCheckConfigFromMain extracts and validates HealthCheckConfig from the
 // top-level Config, applying defaults for any unset fields.
 func HealthCheckConfigFromMain(cfg *Config) (HealthCheckConfig, error) {
@@ -32,10 +43,8 @@ func HealthCheckConfigFromMain(cfg *Config) (HealthCheckConfig, error) {
 		hc.Interval = HealthCheckDefaults().Interval
 	}
 
-	if hc.Interval < 5*time.Second {
-		return HealthCheckConfig{}, fmt.Errorf(
-			"healthcheck: interval %v is below minimum of 5s", hc.Interval,
-		)
+	if err := hc.Validate(); err != nil {
+		return HealthCheckConfig{}, err
 	}
 
 	return hc, nil
