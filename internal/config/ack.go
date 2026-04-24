@@ -18,6 +18,18 @@ func AckDefaults() AckConfig {
 	}
 }
 
+// Validate checks that the AckConfig values are within acceptable bounds.
+// It returns an error if any field is invalid.
+func (c AckConfig) Validate() error {
+	if c.TTL <= 0 {
+		return fmt.Errorf("ack config: ttl must be positive, got %s", c.TTL)
+	}
+	if c.TTL > 30*24*time.Hour {
+		return fmt.Errorf("ack config: ttl must not exceed 30 days, got %s", c.TTL)
+	}
+	return nil
+}
+
 // AckConfigFromMain extracts AckConfig from the top-level config map.
 // The config map may contain an "ack" sub-map with a "ttl" duration string.
 func AckConfigFromMain(cfg map[string]interface{}) (AckConfig, error) {
@@ -42,10 +54,10 @@ func AckConfigFromMain(cfg map[string]interface{}) (AckConfig, error) {
 		if err != nil {
 			return defaults, fmt.Errorf("ack config: invalid ttl %q: %w", s, err)
 		}
-		if d <= 0 {
-			return defaults, fmt.Errorf("ack config: ttl must be positive, got %s", d)
-		}
 		defaults.TTL = d
+	}
+	if err := defaults.Validate(); err != nil {
+		return AckDefaults(), err
 	}
 	return defaults, nil
 }
