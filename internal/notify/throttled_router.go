@@ -22,6 +22,7 @@ func NewThrottledRouter(router *Router, cooldown time.Duration) *ThrottledRouter
 // Dispatch sends an alert through the underlying router only if the
 // target+level combination has not been sent within the cooldown window.
 // It returns a map of target names to any errors encountered.
+// Targets that are throttled are silently skipped.
 func (tr *ThrottledRouter) Dispatch(level, message string) map[string]error {
 	errs := make(map[string]error)
 
@@ -45,4 +46,10 @@ func (tr *ThrottledRouter) Dispatch(level, message string) map[string]error {
 // ResetThrottle clears all throttle state, allowing immediate resend.
 func (tr *ThrottledRouter) ResetThrottle() {
 	tr.throttler.ResetAll()
+}
+
+// ResetTargetThrottle clears throttle state for a specific target and level,
+// allowing that combination to be sent immediately on the next Dispatch call.
+func (tr *ThrottledRouter) ResetTargetThrottle(target, level string) {
+	tr.throttler.Reset(ThrottleKey{Target: target, Level: level})
 }
