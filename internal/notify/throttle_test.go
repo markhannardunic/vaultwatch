@@ -39,6 +39,21 @@ func TestThrottler_Allow_AfterCooldown(t *testing.T) {
 	}
 }
 
+func TestThrottler_Allow_ExactlyAtCooldownBoundaryBlocked(t *testing.T) {
+	now := time.Now()
+	th := NewThrottler(5 * time.Minute)
+	th.now = func() time.Time { return now }
+
+	key := ThrottleKey{Target: "email", Level: "critical"}
+	th.Allow(key)
+
+	// Advance time to exactly the cooldown duration (not past it)
+	th.now = func() time.Time { return now.Add(5 * time.Minute) }
+	if th.Allow(key) {
+		t.Fatal("expected call at exact cooldown boundary to be blocked")
+	}
+}
+
 func TestThrottler_Allow_DifferentKeysIndependent(t *testing.T) {
 	th := NewThrottler(5 * time.Minute)
 	keyA := ThrottleKey{Target: "slack", Level: "critical"}
