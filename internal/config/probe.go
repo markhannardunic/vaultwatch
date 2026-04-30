@@ -21,6 +21,24 @@ func ProbeDefaults() ProbeConfig {
 	}
 }
 
+// Validate checks that the ProbeConfig fields are within acceptable ranges.
+// It returns an error if Timeout or Interval are non-positive when probing is enabled.
+func (p ProbeConfig) Validate() error {
+	if !p.Enabled {
+		return nil
+	}
+	if p.Timeout <= 0 {
+		return fmt.Errorf("probe.timeout must be positive, got %s", p.Timeout)
+	}
+	if p.Interval <= 0 {
+		return fmt.Errorf("probe.interval must be positive, got %s", p.Interval)
+	}
+	if p.Timeout >= p.Interval {
+		return fmt.Errorf("probe.timeout (%s) must be less than probe.interval (%s)", p.Timeout, p.Interval)
+	}
+	return nil
+}
+
 // ProbeConfigFromMain extracts ProbeConfig from the raw config map.
 // It falls back to defaults for any missing or zero-value field.
 func ProbeConfigFromMain(raw map[string]interface{}) (ProbeConfig, error) {
