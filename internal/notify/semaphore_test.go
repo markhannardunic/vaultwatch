@@ -102,6 +102,37 @@ func TestSemaphore_PropagatesSenderError(t *testing.T) {
 	}
 }
 
+// TestSemaphore_ZeroTimeoutNoBlock verifies that a zero timeout causes an
+// immediate error when all slots are occupied, rather than blocking.
+func TestSemaphore_ZeroTimeoutNoBlock(t *testing.T) {
+	snd := &slowSender{delay: 200 * time.Millisecond}
+	sem, err := NewSemaphore(snd, 1, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// occupy the single slot
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = sem.Send("secret/slow", "blocking")
+	}()
+	time.Sleep(10 * time.Millisecond) // let goroutine acquire the slot
+
+	start := time.Now()
+	err = sem.Send("secret/instant", "no wait")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("expected immediate error with zero timeout but got nil")
+	}
+	if elapsed > 20*time.Millisecond {
+		t.Errorf("zero timeout blocked for %v, expected near-instant return", elapsed)
+	}
+	wg.Wait()
+}
+
 type senderFunc func(path, msg string) error
 
 func (f senderFunc) Send(path, msg string) error { return f(path, msg) }
